@@ -1,0 +1,203 @@
+﻿.syntax unified
+.global main
+.global SysTick_Handler
+
+.set SYST_CSR, 0xE000E010
+.set SYST_RVR, 0xE000E014
+.set SYST_CVR, 0xE000E018
+
+.set GPIO_DIRCLR, 0x51C 
+.set GPIO_OUTCLR, 0x50C
+
+.type main, %function
+main:
+
+
+rowLooper:
+  bl displayOneRow
+  @great, now add one to row memory counter
+  ldr r1, =whichRow
+  ldr r2, [r1]
+  add r2, 1
+  str r2, [r1]
+
+  b rowLooper
+
+
+
+@input: which row in r12
+.type displayOneRow, %function
+displayOneRow:
+   push {lr}
+
+   ldr r12, =whichRow
+   ldr r12, [r12]
+
+   @get the row ARM digit
+   lsl r12, r12, 2
+   ldr r11, =RowIndex
+   add r11, r11, r12
+   ldr r11, [r11]
+   bl rowPrepare
+
+   @light the row up
+   bl RowLighterCapsul
+
+   @when the function reach this step, they would want to refreash the Col counter
+
+   mov r0, 0
+   ldr r1, =whichCol
+   str r0, [r1]
+
+   bl Blank
+
+   b stackOut
+
+
+
+   
+
+@input r11: row ARM digit
+@this function prepare the row OUT, DIR
+.type rowPrepare, %function
+rowPrepare:
+push {lr}
+@ DIR
+   ldr r1, =0x50000000
+   ldr r2, [r1, 0x514]
+   mov r3, 0b1
+   lsl r3, r3, r11
+   orr r2, r2, r3
+   str r2, [r1, 0x514]
+@ OUT
+   ldr r2, [r1, 0x504]
+   mov r3, 0b1
+   lsl r3, r3, r11
+   orr r2, r2, r3
+   str r2, [r1, 0x504]  
+pop {lr}
+bx lr
+
+RowLighterCapsul:
+push {lr}
+@input r12: which row
+.type RowLighter, %function
+RowLighter:
+
+  ldr r10, =whichCol
+  ldr r10, [r10]
+
+  ldr r12, =whichRow
+  ldr r12, [r12]
+
+  @check weather col is exhausted, if not, do the looper again, if yes, break out
+  subs r10, #5
+  beq stackOut
+  adds r10, #5
+  b ColLooper
+
+@input r10: which col I am looking at
+ColLooper:
+
+@find the pattern of led from memory address
+lsl r12, r12, 5
+lsl r10, r10, 2
+add r10, r10, r12
+
+@ is this Led on? if on, find its digit and do shift, save the result into memory
+ldr r12, =matrix
+ldr r12, [r12, r10]
+
+subs r12, 1
+
+@ if not, step out the looper and keep rolling, and add a one to Col counter
+ldr r10, =whichCol
+ldr r11, [r10]
+add r11, 1
+str r11, [r10]
+bne RowLighter
+
+@ find digit
+ldr r10, =whichCol
+ldr r10, [r10]
+sub r10, 1
+lsl r10, r10, 2
+ldr r9, =ColIndex
+ldr r10, [r9, r10]
+
+@save the result to memory
+mov r9, 1
+lsl r9, r9, r10
+bl storeLEDinfo
+
+b RowLighter 
+
+
+stackOut:
+pop {lr}
+bx lr
+   
+
+@r9, info
+storeLEDinfo:
+push {lr}
+
+ldr r10, =whichCol
+ldr r10, [r10]
+sub r10, 1
+subs r10, 3
+beq itisThree
+ldr r1, =0x50000000
+ldr r2, [r1, 0x514]
+orr r2, r2, r9
+str r2, [r1, 0x514]
+
+b stackOut
+
+itisThree:
+ldr r1, =0x50000300
+ldr r2, [r1, 0x514]
+orr r2, r2, r9
+str r2, [r1, 0x514]
+
+b stackOut
+
+@turn off the hole led array, both DIR and OUT
+Blank:
+mov r0, 0x0
+mov r1, 0x50000000
+str r0, [r1, 0x514]
+# for that stupid p1, 8 is 5+3, since P1 is 0x50000300
+str r0, [r1, 0x814]
+str r0, [r1, 0x504]
+mov r0, 0b1
+bx lr
+
+
+
+.data
+matrix:
+  @ row one
+  .word 1, 1, 1, 1, 1  
+  .word 2, 3, 4, 5, 6  
+  .word 7, 8, 9, 10, 11  
+  .word 12, 13, 14, 15, 16  
+  .word 17, 18, 19, 20, 21
+
+colResult:
+  .word 0  
+
+whichRow:
+  .word 0
+
+whichCol:
+  .word 0  
+
+RowIndex:
+  .word 21, 22, 15, 24, 19
+ColIndex:  
+  .word 28, 11, 31, 05, 30  
+
+
+
+
